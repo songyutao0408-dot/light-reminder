@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#5b6cff">
+<meta name="description" content="轻提醒 · 一个极简的日程提醒 App：输入文字、设定时间、到点即时提醒。">
+<title>轻提醒 · 到点就叫你</title>
+<!-- PWA：可安装到手机主屏、离线可用 -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="轻提醒">
+<style>
+  :root {
+    --brand: #5b6cff;
+    --brand-2: #8b7cff;
+    --brand-soft: #eef0ff;
+    --bg: #f5f6fb;
+    --card: #ffffff;
+    --ink: #1c2230;
+    --ink-2: #5a6478;
+    --ink-3: #96a0b5;
+    --line: #e8eaf2;
+    --danger: #ff5b6a;
+    --ok: #17c37b;
+    --shadow: 0 6px 24px rgba(30, 40, 90, 0.08);
+    --shadow-lg: 0 16px 48px rgba(30, 40, 90, 0.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12141c;
+      --card: #1b1e29;
+      --ink: #eef1f8;
+      --ink-2: #a4adc2;
+      --ink-3: #6f7890;
+      --line: #2a2e3d;
+      --brand-soft: #23263a;
+      --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+      --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 20px 16px 120px;
+    min-height: 100%;
+  }
+
+  /* Header */
+  header { padding: 12px 4px 20px; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo .dot {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    display: grid; place-items: center; color: #fff; font-size: 18px;
+    box-shadow: 0 4px 12px rgba(91, 108, 255, 0.4);
+  }
+  .logo h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+  .logo .sub { font-size: 12.5px; color: var(--ink-3); margin-left: auto; }
+
+  /* Notification banner */
+  .notice {
+    margin: 4px 0 18px; padding: 11px 14px; border-radius: 12px;
+    background: var(--brand-soft); color: var(--brand);
+    font-size: 13px; display: flex; align-items: center; gap: 8px;
+    cursor: pointer; border: 1px solid transparent; transition: .2s;
+  }
+  .notice:hover { border-color: var(--brand); }
+  .notice.hidden { display: none; }
+  .notice b { font-weight: 600; }
+
+  /* Composer card */
+  .composer {
+    background: var(--card); border-radius: 18px; padding: 16px;
+    box-shadow: var(--shadow); border: 1px solid var(--line);
+  }
+  .composer textarea {
+    width: 100%; border: none; outline: none; resize: none;
+    font-family: inherit; font-size: 16px; color: var(--ink);
+    background: transparent; line-height: 1.5; min-height: 48px;
+  }
+  .composer textarea::placeholder { color: var(--ink-3); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
+  .chip {
+    padding: 7px 13px; border-radius: 999px; font-size: 13.5px;
+    background: var(--bg); color: var(--ink-2); border: 1px solid var(--line);
+    cursor: pointer; transition: .15s; white-space: nowrap; user-select: none;
+  }
+  .chip:hover { border-color: var(--brand); color: var(--brand); }
+  .chip.active {
+    background: var(--brand); color: #fff; border-color: var(--brand);
+    box-shadow: 0 3px 10px rgba(91, 108, 255, 0.35);
+  }
+
+  .custom-row {
+    display: flex; align-items: center; gap: 8px; margin-top: 12px;
+    padding-top: 12px; border-top: 1px dashed var(--line);
+    flex-wrap: wrap;
+  }
+  .custom-row label { font-size: 13px; color: var(--ink-3); }
+  input[type="datetime-local"] {
+    flex: 1; min-width: 180px; padding: 9px 11px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+    font-family: inherit; font-size: 14px; outline: none;
+  }
+  input[type="datetime-local"]:focus { border-color: var(--brand); }
+
+  .composer-footer { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  .target-hint { font-size: 13px; color: var(--ink-2); flex: 1; min-height: 20px; }
+  .target-hint b { color: var(--brand); font-weight: 600; }
+  .btn-add {
+    padding: 11px 22px; border-radius: 12px; border: none; cursor: pointer;
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    color: #fff; font-size: 15px; font-weight: 600; font-family: inherit;
+    box-shadow: 0 4px 14px rgba(91, 108, 255, 0.4); transition: .15s;
+  }
+  .btn-add:hover { transform: translateY(-1px); box-shadow: 0 7px 18px rgba(91, 108, 255, 0.5); }
+  .btn-add:active { transform: translateY(0); }
+  .btn-add:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; transform: none; }
+
+  /* Section */
+  .section-title {
+    display: flex; align-items: center; gap: 8px;
+    margin: 30px 4px 12px; font-size: 14px; color: var(--ink-3);
+    font-weight: 600; letter-spacing: .3px;
+  }
+  .section-title .count {
+    background: var(--brand-soft); color: var(--brand);
+    padding: 1px 9px; border-radius: 999px; font-size: 12px;
+  }
+
+  /* Reminder card */
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .item {
+    background: var(--card); border-radius: 14px; padding: 14px 15px;
+    box-shadow: var(--shadow); border: 1px solid var(--line);
+    display: flex; align-items: flex-start; gap: 12px;
+    animation: pop .25s ease; position: relative; overflow: hidden;
+  }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .item .tick {
+    width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; margin-top: 2px;
+    border: 2px solid var(--line); cursor: pointer; transition: .15s;
+    display: grid; place-items: center; color: transparent; font-size: 13px;
+  }
+  .item .tick:hover { border-color: var(--ok); }
+  .item.done .tick { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .item .body { flex: 1; min-width: 0; }
+  .item .text { font-size: 15.5px; color: var(--ink); word-break: break-word; }
+  .item.done .text { text-decoration: line-through; color: var(--ink-3); }
+  .item .meta { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .item .meta .when { color: var(--brand); font-weight: 600; }
+  .item.overdue .meta .when { color: var(--danger); }
+  .item.fired .meta .when { color: var(--ink-3); font-weight: 500; }
+  .item .del {
+    background: none; border: none; color: var(--ink-3); cursor: pointer;
+    font-size: 18px; padding: 2px 6px; border-radius: 8px; transition: .15s; flex-shrink: 0;
+  }
+  .item .del:hover { color: var(--danger); background: var(--bg); }
+  .item .bar {
+    position: absolute; left: 0; bottom: 0; height: 3px;
+    background: linear-gradient(90deg, var(--brand), var(--brand-2)); transition: width 1s linear;
+  }
+
+  .empty {
+    text-align: center; color: var(--ink-3); padding: 40px 20px; font-size: 14px;
+  }
+  .empty .big { font-size: 40px; margin-bottom: 10px; }
+
+  footer { text-align: center; color: var(--ink-3); font-size: 12px; margin-top: 40px; }
+
+  /* Toast / alert overlay */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(15, 18, 30, 0.55);
+    backdrop-filter: blur(4px); display: none; align-items: center;
+    justify-content: center; z-index: 100; padding: 24px; animation: fade .2s;
+  }
+  .overlay.show { display: flex; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .alert {
+    background: var(--card); border-radius: 22px; padding: 30px 26px;
+    max-width: 360px; width: 100%; text-align: center; box-shadow: var(--shadow-lg);
+    animation: rise .3s cubic-bezier(.2,.9,.3,1.2);
+  }
+  @keyframes rise { from { opacity: 0; transform: scale(.9) translateY(20px); } to { opacity: 1; transform: none; } }
+  .alert .ring {
+    width: 72px; height: 72px; border-radius: 50%; margin: 0 auto 16px;
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    display: grid; place-items: center; font-size: 34px;
+    box-shadow: 0 8px 24px rgba(91, 108, 255, 0.45); animation: shake 1s ease infinite;
+  }
+  @keyframes shake { 0%,100%{transform:rotate(0)} 15%{transform:rotate(-12deg)} 30%{transform:rotate(10deg)} 45%{transform:rotate(-8deg)} 60%{transform:rotate(6deg)} 75%{transform:rotate(-3deg)} }
+  .alert h3 { font-size: 14px; color: var(--ink-3); font-weight: 600; margin-bottom: 8px; }
+  .alert .msg { font-size: 20px; color: var(--ink); font-weight: 700; margin-bottom: 6px; word-break: break-word; }
+  .alert .time { font-size: 13px; color: var(--ink-2); margin-bottom: 22px; }
+  .alert .actions { display: flex; gap: 10px; }
+  .alert button {
+    flex: 1; padding: 12px; border-radius: 12px; border: none; cursor: pointer;
+    font-size: 15px; font-weight: 600; font-family: inherit; transition: .15s;
+  }
+  .alert .snooze { background: var(--bg); color: var(--ink-2); border: 1px solid var(--line); }
+  .alert .snooze:hover { border-color: var(--brand); color: var(--brand); }
+  .alert .ok { background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #fff; }
+  .alert .ok:hover { filter: brightness(1.05); }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: var(--ink); color: #fff; padding: 11px 20px; border-radius: 999px;
+    font-size: 14px; box-shadow: var(--shadow-lg); z-index: 200; opacity: 0;
+    transition: .3s cubic-bezier(.2,.9,.3,1.2); pointer-events: none; white-space: nowrap;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">
+      <div class="dot">⏰</div>
+      <h1>轻提醒</h1>
+      <span class="sub">到点就叫你</span>
+    </div>
+  </header>
+
+  <div class="notice" id="notice" onclick="requestNotify()">
+    🔕 <span><b>开启系统通知</b>，即使切走页面也能收到提醒 · 点这里授权</span>
+  </div>
+
+  <!-- Composer -->
+  <div class="composer">
+    <textarea id="input" rows="1" placeholder="要提醒我什么？比如「10 分钟后接孩子放学」" maxlength="200"></textarea>
+
+    <div class="chips" id="chips">
+      <span class="chip" data-min="0">立即</span>
+      <span class="chip" data-min="5">5 分钟后</span>
+      <span class="chip" data-min="15">15 分钟后</span>
+      <span class="chip" data-min="30">30 分钟后</span>
+      <span class="chip" data-min="60">1 小时后</span>
+      <span class="chip" data-min="180">3 小时后</span>
+      <span class="chip" data-at="tonight">今晚 20:00</span>
+      <span class="chip" data-at="tomorrow">明早 09:00</span>
+    </div>
+
+    <div class="custom-row">
+      <label for="dt">或指定时间</label>
+      <input type="datetime-local" id="dt">
+    </div>
+
+    <div class="composer-footer">
+      <div class="target-hint" id="hint">选一个时间，或直接指定 👆</div>
+      <button class="btn-add" id="addBtn" disabled>添加提醒</button>
+    </div>
+  </div>
+
+  <!-- Active list -->
+  <div class="section-title">待提醒 <span class="count" id="cntActive">0</span></div>
+  <div class="list" id="listActive"></div>
+  <div class="empty" id="emptyActive">
+    <div class="big">🌱</div>
+    还没有提醒，上面写点什么吧
+  </div>
+
+  <!-- Done list -->
+  <div class="section-title" id="doneTitle" style="display:none">已完成 <span class="count" id="cntDone">0</span></div>
+  <div class="list" id="listDone"></div>
+
+  <footer>数据仅保存在本机浏览器 · 不上传任何服务器</footer>
+</div>
+
+<!-- Ring alert -->
+<div class="overlay" id="overlay">
+  <div class="alert">
+    <div class="ring">🔔</div>
+    <h3>时间到啦</h3>
+    <div class="msg" id="alertMsg">提醒内容</div>
+    <div class="time" id="alertTime"></div>
+    <div class="actions">
+      <button class="snooze" onclick="snooze()">🕐 5 分钟后再提醒</button>
+      <button class="ok" onclick="dismissAlert()">知道了</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+  const KEY = "light-reminders-v1";
+  const $ = (id) => document.getElementById(id);
+
+  let items = load();
+  let selected = null;         // {min} or {at:'tonight'} or {custom:true}
+  let timers = {};             // id -> timeout handle
+  let ringingId = null;
+  let audioCtx = null;
+  let soundTimer = null;
+
+  /* ---------- persistence ---------- */
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || []; }
+    catch (e) { return []; }
+  }
+  function save() { localStorage.setItem(KEY, JSON.stringify(items)); }
+
+  /* ---------- time helpers ---------- */
+  function computeTarget() {
+    if (!selected) return null;
+    const now = Date.now();
+    if (selected.custom) {
+      const v = $("dt").value;
+      if (!v) return null;
+      return new Date(v).getTime();
+    }
+    if (typeof selected.min === "number") return now + selected.min * 60000;
+    if (selected.at === "tonight") {
+      const d = new Date(); d.setHours(20, 0, 0, 0);
+      if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+      return d.getTime();
+    }
+    if (selected.at === "tomorrow") {
+      const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0);
+      return d.getTime();
+    }
+    return null;
+  }
+
+  function fmt(ts) {
+    const d = new Date(ts), now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    const tmr = new Date(now); tmr.setDate(now.getDate() + 1);
+    const isTmr = d.toDateString() === tmr.toDateString();
+    const hm = d.toTimeString().slice(0, 5);
+    if (sameDay) return "今天 " + hm;
+    if (isTmr) return "明天 " + hm;
+    return (d.getMonth() + 1) + "月" + d.getDate() + "日 " + hm;
+  }
+
+  function relative(ts) {
+    let s = Math.round((ts - Date.now()) / 1000);
+    if (s <= 0) return "已到时间";
+    if (s < 60) return s + " 秒后";
+    let m = Math.round(s / 60);
+    if (m < 60) return m + " 分钟后";
+    let h = Math.floor(m / 60), mm = m % 60;
+    if (h < 24) return h + " 小时" + (mm ? mm + " 分" : "") + "后";
+    let day = Math.round(h / 24);
+    return day + " 天后";
+  }
+
+  /* ---------- composer ---------- */
+  const input = $("input");
+  input.addEventListener("input", function () {
+    this.style.height = "auto";
+    this.style.height = this.scrollHeight + "px";
+    refreshHint();
+  });
+
+  $("chips").addEventListener("click", function (e) {
+    const chip = e.target.closest(".chip");
+    if (!chip) return;
+    document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    $("dt").value = "";
+    if (chip.dataset.at) selected = { at: chip.dataset.at };
+    else selected = { min: parseInt(chip.dataset.min, 10) };
+    refreshHint();
+  });
+
+  $("dt").addEventListener("input", function () {
+    if (this.value) {
+      document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+      selected = { custom: true };
+    }
+    refreshHint();
+  });
+
+  function refreshHint() {
+    const hint = $("hint"), btn = $("addBtn");
+    const hasText = input.value.trim().length > 0;
+    const target = computeTarget();
+    if (!target) {
+      hint.innerHTML = hasText ? "选一个时间 👆" : "选一个时间，或直接指定 👆";
+      btn.disabled = true; return;
+    }
+    if (target <= Date.now() && !(selected && selected.min === 0)) {
+      hint.innerHTML = "⚠️ 时间已过，请重新选择";
+      btn.disabled = true; return;
+    }
+    const when = (selected && selected.min === 0) ? "<b>立即提醒</b>"
+      : "将在 <b>" + fmt(target) + "</b> · " + relative(target);
+    hint.innerHTML = hasText ? when : "先写点提醒内容 ✍️";
+    btn.disabled = !hasText;
+  }
+
+  $("addBtn").addEventListener("click", addItem);
+  input.addEventListener("keydown", function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !$("addBtn").disabled) addItem();
+  });
+
+  function addItem() {
+    const text = input.value.trim();
+    const target = computeTarget();
+    if (!text || !target) return;
+    const it = { id: "r" + Date.now() + Math.random().toString(36).slice(2, 6),
+                 text, at: target, done: false, fired: false, created: Date.now() };
+    items.unshift(it);
+    save();
+    schedule(it);
+    // reset composer
+    input.value = ""; input.style.height = "auto";
+    $("dt").value = "";
+    document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+    selected = null;
+    refreshHint();
+    render();
+    if (target - Date.now() < 1500) { /* immediate */ }
+    else toast("已添加 · " + relative(target) + "提醒你");
+    // nudge for notification permission on first add
+    maybeAskNotify();
+  }
+
+  /* ---------- scheduling ---------- */
+  function schedule(it) {
+    clearTimeout(timers[it.id]);
+    if (it.done || it.fired) return;
+    const delay = it.at - Date.now();
+    if (delay <= 0) { fire(it.id); return; }
+    // setTimeout max ~24.8 days; re-arm in chunks for long delays
+    const chunk = Math.min(delay, 2000000000);
+    timers[it.id] = setTimeout(function () {
+      if (it.at - Date.now() <= 500) fire(it.id);
+      else schedule(it);
+    }, chunk);
+  }
+
+  function scheduleAll() {
+    items.forEach(it => { if (!it.done && !it.fired) schedule(it); });
+  }
+
+  /* ---------- firing ---------- */
+  function fire(id) {
+    const it = items.find(x => x.id === id);
+    if (!it || it.done || it.fired) return;
+    it.fired = true; save(); render();
+    // system notification
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        const n = new Notification("⏰ 轻提醒", { body: it.text, tag: it.id, requireInteraction: true });
+        n.onclick = function () { window.focus(); n.close(); };
+      } catch (e) {}
+    }
+    // in-page ring
+    ringingId = id;
+    $("alertMsg").textContent = it.text;
+    $("alertTime").textContent = "设定时间 " + fmt(it.at);
+    $("overlay").classList.add("show");
+    startSound();
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
+  }
+
+  /* ---------- sound (WebAudio, no asset needed) ---------- */
+  function beep() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      const t = audioCtx.currentTime;
+      [0, 0.18].forEach(off => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = "sine"; o.frequency.value = 880;
+        o.connect(g); g.connect(audioCtx.destination);
+        g.gain.setValueAtTime(0.0001, t + off);
+        g.gain.exponentialRampToValueAtTime(0.35, t + off + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + off + 0.14);
+        o.start(t + off); o.stop(t + off + 0.16);
+      });
+    } catch (e) {}
+  }
+  function startSound() {
+    beep();
+    clearInterval(soundTimer);
+    let n = 0;
+    soundTimer = setInterval(function () { beep(); if (++n > 20) stopSound(); }, 1400);
+  }
+  function stopSound() { clearInterval(soundTimer); soundTimer = null; }
+
+  /* ---------- alert actions ---------- */
+  window.dismissAlert = function () {
+    const it = items.find(x => x.id === ringingId);
+    if (it) { it.done = true; save(); }
+    closeAlert(); render();
+  };
+  window.snooze = function () {
+    const it = items.find(x => x.id === ringingId);
+    if (it) {
+      it.at = Date.now() + 5 * 60000; it.fired = false; it.done = false;
+      save(); schedule(it); toast("好的，5 分钟后再叫你");
+    }
+    closeAlert(); render();
+  };
+  function closeAlert() {
+    $("overlay").classList.remove("show");
+    stopSound(); ringingId = null;
+  }
+
+  /* ---------- render ---------- */
+  function render() {
+    const active = items.filter(i => !i.done);
+    const done = items.filter(i => i.done);
+    const la = $("listActive"), ld = $("listDone");
+    la.innerHTML = ""; ld.innerHTML = "";
+
+    active.forEach(it => la.appendChild(card(it)));
+    done.slice(0, 30).forEach(it => ld.appendChild(card(it)));
+
+    $("cntActive").textContent = active.length;
+    $("cntDone").textContent = done.length;
+    $("emptyActive").style.display = active.length ? "none" : "block";
+    $("doneTitle").style.display = done.length ? "flex" : "none";
+  }
+
+  function card(it) {
+    const el = document.createElement("div");
+    el.className = "item" + (it.done ? " done" : "") +
+      (!it.done && it.fired ? " fired" : "") +
+      (!it.done && !it.fired && it.at <= Date.now() ? " overdue" : "");
+    const overdue = !it.done && !it.fired && it.at <= Date.now();
+
+    const tick = document.createElement("div");
+    tick.className = "tick"; tick.textContent = "✓";
+    tick.title = it.done ? "标为未完成" : "标记完成";
+    tick.onclick = function () {
+      it.done = !it.done;
+      if (it.done) clearTimeout(timers[it.id]); else { it.fired = false; schedule(it); }
+      save(); render();
+    };
+
+    const body = document.createElement("div"); body.className = "body";
+    const txt = document.createElement("div"); txt.className = "text"; txt.textContent = it.text;
+    const meta = document.createElement("div"); meta.className = "meta";
+    let whenLabel;
+    if (it.done) whenLabel = "✅ 已完成";
+    else if (it.fired) whenLabel = "🔔 已提醒 · " + fmt(it.at);
+    else if (overdue) whenLabel = "⏱ " + fmt(it.at) + " · 待触发";
+    else whenLabel = "⏰ " + fmt(it.at) + " · " + relative(it.at);
+    meta.innerHTML = '<span class="when">' + whenLabel + "</span>";
+    body.appendChild(txt); body.appendChild(meta);
+
+    const del = document.createElement("button");
+    del.className = "del"; del.textContent = "×"; del.title = "删除";
+    del.onclick = function () {
+      clearTimeout(timers[it.id]);
+      items = items.filter(x => x.id !== it.id);
+      save(); render(); toast("已删除");
+    };
+
+    el.appendChild(tick); el.appendChild(body); el.appendChild(del);
+    return el;
+  }
+
+  // live-refresh relative time every 20s
+  setInterval(function () {
+    if (ringingId) return;
+    document.querySelectorAll("#listActive .item").forEach(() => {});
+    render();
+  }, 20000);
+
+  /* ---------- notifications ---------- */
+  function updateNotice() {
+    const n = $("notice");
+    if (!("Notification" in window) || Notification.permission === "granted") n.classList.add("hidden");
+    else n.classList.remove("hidden");
+  }
+  window.requestNotify = function () {
+    if (!("Notification" in window)) { toast("此浏览器不支持系统通知"); return; }
+    Notification.requestPermission().then(function (p) {
+      updateNotice();
+      if (p === "granted") toast("已开启系统通知 🔔");
+      else toast("未授权 · 页面弹窗仍会提醒你");
+    });
+  };
+  let asked = false;
+  function maybeAskNotify() {
+    if (asked) return; asked = true;
+    if ("Notification" in window && Notification.permission === "default") requestNotify();
+  }
+
+  /* ---------- toast ---------- */
+  let toastTimer = null;
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+  }
+
+  /* ---------- unlock audio on first interaction ---------- */
+  function unlockAudio() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    } catch (e) {}
+    document.removeEventListener("pointerdown", unlockAudio);
+  }
+  document.addEventListener("pointerdown", unlockAudio);
+
+  // re-check on tab focus (catches reminders that "fired" while backgrounded)
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) {
+      items.forEach(it => { if (!it.done && !it.fired && it.at <= Date.now()) fire(it.id); });
+      render();
+    }
+  });
+
+  /* ---------- init ---------- */
+  // set datetime-local min to now-ish and default step
+  (function initDt() {
+    const d = new Date(Date.now() + 10 * 60000);
+    const pad = n => String(n).padStart(2, "0");
+    $("dt").min = new Date().toISOString().slice(0, 16);
+  })();
+
+  scheduleAll();
+  render();
+  refreshHint();
+  updateNotice();
+  // fire any that were already due when the app opened
+  items.forEach(it => { if (!it.done && !it.fired && it.at <= Date.now()) fire(it.id); });
+
+  // register service worker (offline + installable)
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    });
+  }
+})();
+</script>
+</body>
+</html>
