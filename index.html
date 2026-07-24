@@ -105,6 +105,27 @@
     box-shadow: 0 3px 10px rgba(91, 108, 255, 0.35);
   }
 
+  /* Smart parse suggestion */
+  .smartbox {
+    display: none; align-items: center; gap: 11px; margin-top: 12px;
+    padding: 11px 13px; border-radius: 13px;
+    background: linear-gradient(135deg, rgba(91,108,255,.10), rgba(139,124,255,.10));
+    border: 1px solid rgba(91,108,255,.28); animation: pop .2s ease;
+  }
+  .smartbox.show { display: flex; }
+  .smartbox.on { border-color: var(--brand); box-shadow: 0 3px 12px rgba(91,108,255,.22); }
+  .smartbox .s-icon { font-size: 20px; flex-shrink: 0; }
+  .smartbox .s-info { flex: 1; min-width: 0; }
+  .smartbox .s-when { font-size: 14.5px; font-weight: 700; color: var(--brand); }
+  .smartbox .s-detail { font-size: 12px; color: var(--ink-2); margin-top: 1px; }
+  .smartbox .s-use {
+    flex-shrink: 0; font-size: 13px; font-weight: 600; color: var(--brand);
+    padding: 6px 12px; border-radius: 999px; border: 1px solid var(--brand);
+    background: var(--card); cursor: pointer; transition: .15s;
+  }
+  .smartbox.on .s-use { background: var(--brand); color: #fff; }
+  .smartbox .s-use:hover { filter: brightness(1.03); }
+
   .custom-row {
     display: flex; align-items: center; gap: 8px; margin-top: 12px;
     padding-top: 12px; border-top: 1px dashed var(--line);
@@ -163,6 +184,10 @@
   .item.done .text { text-decoration: line-through; color: var(--ink-3); }
   .item .meta { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .item .meta .when { color: var(--brand); font-weight: 600; }
+  .item .meta .evt {
+    color: var(--ink-3); background: var(--bg); border: 1px solid var(--line);
+    padding: 0 7px; border-radius: 999px; font-size: 11.5px;
+  }
   .item.overdue .meta .when { color: var(--danger); }
   .item.fired .meta .when { color: var(--ink-3); font-weight: 500; }
   .item .del {
@@ -241,7 +266,16 @@
 
   <!-- Composer -->
   <div class="composer">
-    <textarea id="input" rows="1" placeholder="要提醒我什么？比如「10 分钟后接孩子放学」" maxlength="200"></textarea>
+    <textarea id="input" rows="1" placeholder="直接说，例如「明天早上10点提醒我查银行卡余额，提前5分钟」" maxlength="200"></textarea>
+
+    <div class="smartbox" id="smartBox">
+      <div class="s-icon">🧠</div>
+      <div class="s-info">
+        <div class="s-when" id="sWhen"></div>
+        <div class="s-detail" id="sDetail"></div>
+      </div>
+      <div class="s-use" id="sUse">用它</div>
+    </div>
 
     <div class="chips" id="chips">
       <span class="chip" data-min="0">立即</span>
@@ -303,11 +337,138 @@
   const $ = (id) => document.getElementById(id);
 
   let items = load();
-  let selected = null;         // {min} or {at:'tonight'} or {custom:true}
+  let selected = null;         // {min} or {at:'tonight'} or {custom:true} or {smart:true}
   let timers = {};             // id -> timeout handle
   let ringingId = null;
   let audioCtx = null;
   let soundTimer = null;
+  let smart = null;            // 智能识别结果 {remindTs, eventTs, lead, clean}
+  let manualPick = false;      // 用户是否手动选了时间（手动优先于智能识别）
+  let parseTimer = null;
+
+  /* ---------- 中文自然语言时间解析 ---------- */
+  function cnNum(s) {
+    if (s == null) return NaN;
+    s = String(s).trim();
+    if (s === "") return NaN;
+    if (/^\d+$/.test(s)) return parseInt(s, 10);
+    const map = { 零:0,〇:0,一:1,二:2,两:2,俩:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9 };
+    if (s === "十") return 10;
+    if (s.indexOf("十") !== -1) {
+      const p = s.split("十");
+      const tens = p[0] === "" ? 1 : map[p[0]];
+      const ones = p[1] === "" ? 0 : map[p[1]];
+      if (isNaN(tens) || tens == null || isNaN(ones) || ones == null) return NaN;
+      return tens * 10 + ones;
+    }
+    let r = 0;
+    for (const ch of s) { if (map[ch] == null) return NaN; r = r * 10 + map[ch]; }
+    return r;
+  }
+  const NUM_RE = "([0-9]+|[零〇一二两俩三四五六七八九十]+)";
+  function parseZh(raw, now) {
+    if (!raw || !raw.trim()) return null;
+    now = now || new Date();
+    let text = " " + raw + " ";
+    const strip = [];
+    const eat = (s) => { if (s) { strip.push(s); text = text.replace(s, " "); } };
+    let d = new Date(now); d.setSeconds(0, 0);
+    let dayFound = false, timeFound = false, m;
+
+    let period = null;
+    if (/凌晨/.test(raw)) period = "dawn";
+    else if (/(早上|早晨|上午|清晨|一早|今早|明早|晨)/.test(raw)) period = "am";
+    else if (/(中午|正午)/.test(raw)) period = "noon";
+    else if (/(下午|傍晚|晚上|夜里|今晚|明晚|夜)/.test(raw)) period = "pm";
+    else if (/晚/.test(raw)) period = "pm";
+    else if (/早/.test(raw)) period = "am";
+
+    if (m = text.match(new RegExp(NUM_RE + "\\s*分钟?后"))) {
+      const n = cnNum(m[1]); if (!isNaN(n)) { d = new Date(now.getTime() + n * 60000); dayFound = timeFound = true; eat(m[0]); }
+    } else if (m = text.match(new RegExp(NUM_RE + "\\s*(?:个)?小时后"))) {
+      const n = cnNum(m[1]); if (!isNaN(n)) { d = new Date(now.getTime() + n * 3600000); dayFound = timeFound = true; eat(m[0]); }
+    } else if (m = text.match(new RegExp(NUM_RE + "\\s*天后"))) {
+      const n = cnNum(m[1]); if (!isNaN(n)) { d.setDate(d.getDate() + n); dayFound = true; eat(m[0]); }
+    }
+
+    if (!dayFound) {
+      if (m = text.match(/大后天/)) { d.setDate(d.getDate() + 3); dayFound = true; eat(m[0]); }
+      else if (m = text.match(/后天/)) { d.setDate(d.getDate() + 2); dayFound = true; eat(m[0]); }
+      else if (m = text.match(/明(?:天|日|早上|早晨|早|晚上|晚|晨)/)) { d.setDate(d.getDate() + 1); dayFound = true; eat(m[0]); }
+      else if (m = text.match(/今(?:天|日|晚上|晚|早上|早|晨)/)) { dayFound = true; eat(m[0]); }
+      else if (m = text.match(new RegExp(NUM_RE + "月" + NUM_RE + "[日号]"))) {
+        const mo = cnNum(m[1]), da = cnNum(m[2]);
+        if (!isNaN(mo) && !isNaN(da)) { d.setMonth(mo - 1); d.setDate(da); if (d.getTime() < now.getTime() - 60000) d.setFullYear(d.getFullYear() + 1); dayFound = true; eat(m[0]); }
+      }
+      else if (m = text.match(/(下{0,2})(?:个)?(?:周|星期|礼拜)([一二三四五六天日])/)) {
+        const wd = { 一:1,二:2,三:3,四:4,五:5,六:6,天:0,日:0 }[m[2]];
+        let add = (wd - d.getDay() + 7) % 7; if (add === 0) add = 7;
+        if (m[1].length) add += 7 * m[1].length;
+        d.setDate(d.getDate() + add); dayFound = true; eat(m[0]);
+      }
+    }
+
+    let hour = null, minute = 0;
+    if (m = text.match(new RegExp(NUM_RE + "\\s*[点時时]\\s*半"))) {
+      hour = cnNum(m[1]); minute = 30; eat(m[0]); timeFound = true;
+    } else if (m = text.match(new RegExp(NUM_RE + "\\s*[点時时]\\s*" + NUM_RE + "\\s*分?"))) {
+      hour = cnNum(m[1]); minute = cnNum(m[2]); eat(m[0]); timeFound = true;
+    } else if (m = text.match(new RegExp(NUM_RE + "\\s*[点時时]\\s*(?:整|钟)?"))) {
+      hour = cnNum(m[1]); minute = 0; eat(m[0]); timeFound = true;
+    } else if (m = text.match(/([0-9]{1,2})\s*[:：]\s*([0-9]{2})/)) {
+      hour = parseInt(m[1], 10); minute = parseInt(m[2], 10); eat(m[0]); timeFound = true;
+    }
+
+    if (!timeFound && period) {
+      if (period === "noon") { hour = 12; timeFound = true; }
+      else if (period === "pm") { hour = 20; timeFound = true; }
+      else if (period === "am") { hour = 9; timeFound = true; }
+      else if (period === "dawn") { hour = 6; timeFound = true; }
+    }
+    ["凌晨","早上","早晨","上午","清晨","一早","今早","明早","中午","正午","下午","傍晚","晚上","夜里","今晚","明晚"].forEach(w => { if (text.indexOf(w) !== -1) eat(w); });
+
+    if (hour == null && !dayFound) return null;
+
+    if (hour != null) {
+      if (isNaN(minute)) minute = 0;
+      if (period === "pm" && hour < 12) hour += 12;
+      else if ((period === "am" || period === "dawn") && hour === 12) hour = 0;
+      else if (period === "noon" && hour < 12) hour = 12;
+      d.setHours(hour, minute, 0, 0);
+    } else {
+      d.setHours(9, 0, 0, 0);
+    }
+    if (!dayFound && d.getTime() < now.getTime() - 30000) d.setDate(d.getDate() + 1);
+
+    const eventTs = d.getTime();
+    let lead = null, remindTs = eventTs;
+    if (m = text.match(new RegExp("(?:提前|提早)\\s*(?:半|" + NUM_RE + ")\\s*(?:个)?(分钟?|小时|天)"))) {
+      const n = m[0].indexOf("半") !== -1 ? 0.5 : cnNum(m[1]);
+      if (!isNaN(n)) {
+        const unit = /小时/.test(m[2]) ? "小时" : /天/.test(m[2]) ? "天" : "分钟";
+        const ms = unit === "天" ? n * 86400000 : unit === "小时" ? n * 3600000 : n * 60000;
+        remindTs = eventTs - ms; lead = { n, unit }; eat(m[0]);
+      }
+    }
+
+    let clean = " " + raw + " ";
+    strip.forEach(s => { clean = clean.replace(s, " "); });
+    clean = clean
+      .replace(/(记得|请|帮我|麻烦|然后|于|在|要)?\s*(提醒|叫|通知|喊)\s*(我|一下)?/g, " ")
+      .replace(/(记得|记着|别忘了|别忘|请帮我|帮我|麻烦你?|然后)/g, " ")
+      .replace(/(凌晨|早上|早晨|上午|清晨|一早|今早|明早|中午|正午|下午|傍晚|晚上|夜里|今晚|明晚)/g, " ")
+      .replace(/[，。、,.!！?？;；:：]/g, " ")
+      .replace(/(^|\s)[的了呢吧于在要早晚晨夜天日号点]+(?=\s)/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return { remindTs, eventTs, lead, clean };
+  }
+  function leadText(lead) {
+    if (!lead) return "";
+    const n = lead.n === 0.5 ? "半" : lead.n;
+    return "提前" + n + lead.unit;
+  }
 
   /* ---------- persistence ---------- */
   function load() {
@@ -320,6 +481,7 @@
   function computeTarget() {
     if (!selected) return null;
     const now = Date.now();
+    if (selected.smart) return smart ? smart.remindTs : null;
     if (selected.custom) {
       const v = $("dt").value;
       if (!v) return null;
@@ -366,12 +528,48 @@
   input.addEventListener("input", function () {
     this.style.height = "auto";
     this.style.height = this.scrollHeight + "px";
+    clearTimeout(parseTimer);
+    parseTimer = setTimeout(runSmartParse, 200);
+    refreshHint();
+  });
+
+  function runSmartParse() {
+    const raw = input.value.trim();
+    const res = raw ? parseZh(raw, new Date()) : null;
+    smart = res;
+    const box = $("smartBox");
+    if (res) {
+      $("sWhen").textContent = "🗓 " + fmt(res.remindTs) + " 提醒";
+      let detail = relative(res.remindTs);
+      if (res.lead) detail += " · 事件 " + fmt(res.eventTs) + "（" + leadText(res.lead) + "）";
+      if (res.clean) detail += " · 内容：" + res.clean;
+      $("sDetail").textContent = detail;
+      box.classList.add("show");
+      // 未手动选时间时，自动采用识别结果
+      if (!manualPick) { selected = { smart: true }; box.classList.add("on"); }
+      else box.classList.remove("on");
+    } else {
+      box.classList.remove("show", "on");
+      if (selected && selected.smart) selected = null;
+    }
+    refreshHint();
+  }
+
+  $("smartBox").addEventListener("click", function () {
+    if (!smart) return;
+    manualPick = false;
+    document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+    $("dt").value = "";
+    selected = { smart: true };
+    this.classList.add("on");
     refreshHint();
   });
 
   $("chips").addEventListener("click", function (e) {
     const chip = e.target.closest(".chip");
     if (!chip) return;
+    manualPick = true;
+    $("smartBox").classList.remove("on");
     document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
     chip.classList.add("active");
     $("dt").value = "";
@@ -382,28 +580,39 @@
 
   $("dt").addEventListener("input", function () {
     if (this.value) {
+      manualPick = true;
+      $("smartBox").classList.remove("on");
       document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
       selected = { custom: true };
     }
     refreshHint();
   });
 
+  function effectiveText() {
+    if (selected && selected.smart && smart) return smart.clean;
+    return input.value.trim();
+  }
   function refreshHint() {
     const hint = $("hint"), btn = $("addBtn");
-    const hasText = input.value.trim().length > 0;
+    const hasRaw = input.value.trim().length > 0;
+    const content = effectiveText();
     const target = computeTarget();
     if (!target) {
-      hint.innerHTML = hasText ? "选一个时间 👆" : "选一个时间，或直接指定 👆";
+      hint.innerHTML = hasRaw ? "选一个时间 👆" : "直接打一句话，或选时间 👆";
       btn.disabled = true; return;
     }
     if (target <= Date.now() && !(selected && selected.min === 0)) {
       hint.innerHTML = "⚠️ 时间已过，请重新选择";
       btn.disabled = true; return;
     }
+    if (!content) {
+      hint.innerHTML = "补充一下要提醒的内容 ✍️";
+      btn.disabled = true; return;
+    }
     const when = (selected && selected.min === 0) ? "<b>立即提醒</b>"
       : "将在 <b>" + fmt(target) + "</b> · " + relative(target);
-    hint.innerHTML = hasText ? when : "先写点提醒内容 ✍️";
-    btn.disabled = !hasText;
+    hint.innerHTML = when;
+    btn.disabled = false;
   }
 
   $("addBtn").addEventListener("click", addItem);
@@ -412,11 +621,16 @@
   });
 
   function addItem() {
-    const text = input.value.trim();
+    const text = effectiveText();
     const target = computeTarget();
     if (!text || !target) return;
     const it = { id: "r" + Date.now() + Math.random().toString(36).slice(2, 6),
                  text, at: target, done: false, fired: false, created: Date.now() };
+    // 智能识别带「事件时间 + 提前量」时一并记录
+    if (selected && selected.smart && smart && smart.lead) {
+      it.eventAt = smart.eventTs;
+      it.lead = leadText(smart.lead);
+    }
     items.unshift(it);
     save();
     schedule(it);
@@ -424,7 +638,8 @@
     input.value = ""; input.style.height = "auto";
     $("dt").value = "";
     document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-    selected = null;
+    $("smartBox").classList.remove("show", "on");
+    selected = null; smart = null; manualPick = false;
     refreshHint();
     render();
     if (target - Date.now() < 1500) { /* immediate */ }
@@ -556,7 +771,11 @@
     else if (it.fired) whenLabel = "🔔 已提醒 · " + fmt(it.at);
     else if (overdue) whenLabel = "⏱ " + fmt(it.at) + " · 待触发";
     else whenLabel = "⏰ " + fmt(it.at) + " · " + relative(it.at);
-    meta.innerHTML = '<span class="when">' + whenLabel + "</span>";
+    let extra = "";
+    if (it.eventAt && it.eventAt !== it.at) {
+      extra = ' <span class="evt">事件 ' + fmt(it.eventAt) + (it.lead ? " · " + it.lead : "") + "</span>";
+    }
+    meta.innerHTML = '<span class="when">' + whenLabel + "</span>" + extra;
     body.appendChild(txt); body.appendChild(meta);
 
     const del = document.createElement("button");
