@@ -8,92 +8,60 @@
 
 ## 开始之前
 
-需要一台**电脑**（Windows / Mac 都行），装好 [Node.js](https://nodejs.org)（LTS 版即可）。
-在终端里确认能跑：
-
-```bash
-node -v      # 显示 v20 或更高就行
-```
-
-还需要一个 [Cloudflare 账号](https://dash.cloudflare.com/sign-up)（免费注册，邮箱即可）。
+- 一台电脑（下面以 Windows 为例，Mac 同理）
+- 一个 [Cloudflare 账号](https://dash.cloudflare.com/sign-up)（免费注册，不用绑卡）
 
 ---
 
-## 第 1 步：拿到代码
+## 第 1 步：装 Node.js
 
-```bash
-git clone https://github.com/songyutao0408-dot/light-reminder.git
-cd light-reminder/server
+去 https://nodejs.org 下载 **LTS** 版本，双击安装，一路点「Next / 下一步」到底即可。
+
+## 第 2 步：下载代码
+
+点这个链接直接下载压缩包：
+https://github.com/songyutao0408-dot/light-reminder/archive/refs/heads/main.zip
+
+下载后**解压到桌面**，会得到一个 `light-reminder-main` 文件夹。（不需要安装 Git）
+
+## 第 3 步：打开终端
+
+按 `Win + X`，选「**终端**」或「**Windows PowerShell**」。
+
+先把目录切到代码里（整行复制粘贴，回车）：
+
+```powershell
+cd "$HOME\Desktop\light-reminder-main\server"
+```
+
+> 如果提示找不到路径，说明解压位置不对。在文件夹地址栏上点一下复制完整路径，
+> 用 `cd "粘贴的路径\server"` 代替。
+
+## 第 4 步：安装依赖
+
+```powershell
 npm install
 ```
 
-## 第 2 步：登录 Cloudflare
+## 第 5 步：一键部署
 
-```bash
-npx wrangler login
+```powershell
+npm run setup
 ```
 
-会自动打开浏览器让你授权，点 **Allow** 即可。
+这一条命令会自动完成：登录 Cloudflare、建数据库、生成推送密钥、建表、部署上线。
+中途会：
 
-## 第 3 步：创建数据库
+- **弹出浏览器让你授权** → 点 **Allow**
+- 若问 `Ok to proceed? (y)` → 输入 `y` 回车
 
-```bash
-npx wrangler d1 create light-reminder
-```
-
-命令会输出一段配置，形如：
+跑完会打印你的后端地址，形如：
 
 ```
-[[d1_databases]]
-binding = "DB"
-database_name = "light-reminder"
-database_id = "abcd1234-..."      ← 把这一串复制下来
+https://light-reminder-push.你的用户名.workers.dev
 ```
 
-打开 `wrangler.toml`，把最底下的 `database_id = "PLACEHOLDER_RUN_SETUP"`
-替换成你刚拿到的那串 id。
-
-然后建表：
-
-```bash
-npx wrangler d1 execute light-reminder --remote --file=schema.sql
-```
-
-## 第 4 步：生成推送密钥
-
-```bash
-npm run gen-vapid
-```
-
-会打印两段内容：
-
-- **VAPID 公钥**：打开 `wrangler.toml`，填到 `VAPID_PUBLIC_KEY = ""` 的引号里
-- **VAPID 私钥 JWK**：执行下面命令，把那一整行 JSON 粘进去回车
-
-```bash
-npx wrangler secret put VAPID_PRIVATE_JWK
-```
-
-> 私钥是机密，只存在 Cloudflare，不要提交到 Git、不要发给任何人。
-
-顺便把 `wrangler.toml` 里的 `VAPID_CONTACT` 改成你的邮箱
-（推送服务商用来在出问题时联系你，随便填一个能收信的即可）。
-
-## 第 5 步：部署
-
-```bash
-npx wrangler deploy
-```
-
-成功后会输出你的后端地址，形如：
-
-```
-https://light-reminder-push.<你的用户名>.workers.dev
-```
-
-**把这个地址复制下来。**
-
----
+**把它复制下来。**
 
 ## 第 6 步：在手机上连接
 
