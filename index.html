@@ -81,6 +81,19 @@
   .notice.hidden { display: none; }
   .notice b { font-weight: 600; }
 
+  /* Lock-screen explainer */
+  .lockhint {
+    display: flex; gap: 10px; margin: 0 0 18px; padding: 12px 14px;
+    border-radius: 13px; background: var(--card); border: 1px solid var(--line);
+    box-shadow: var(--shadow); font-size: 12.8px; color: var(--ink-2); line-height: 1.65;
+  }
+  .lockhint .l-icon { font-size: 17px; flex-shrink: 0; line-height: 1.4; }
+  .lockhint b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 2px; }
+  .lockhint .l-chip {
+    display: inline-block; padding: 0 7px; border-radius: 999px;
+    background: var(--brand-soft); color: var(--brand); font-weight: 600; font-size: 12px;
+  }
+
   /* Composer card */
   .composer {
     background: var(--card); border-radius: 18px; padding: 16px;
@@ -190,11 +203,19 @@
   }
   .item.overdue .meta .when { color: var(--danger); }
   .item.fired .meta .when { color: var(--ink-3); font-weight: 500; }
+  .item .acts { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
   .item .del {
     background: none; border: none; color: var(--ink-3); cursor: pointer;
-    font-size: 18px; padding: 2px 6px; border-radius: 8px; transition: .15s; flex-shrink: 0;
+    font-size: 18px; padding: 0 6px; border-radius: 8px; transition: .15s; flex-shrink: 0;
+    align-self: flex-end; line-height: 1.3;
   }
   .item .del:hover { color: var(--danger); background: var(--bg); }
+  .item .cal {
+    background: var(--brand-soft); border: 1px solid transparent; color: var(--brand);
+    font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+    padding: 4px 9px; border-radius: 999px; white-space: nowrap; transition: .15s;
+  }
+  .item .cal:hover { border-color: var(--brand); }
   .item .bar {
     position: absolute; left: 0; bottom: 0; height: 3px;
     background: linear-gradient(90deg, var(--brand), var(--brand-2)); transition: width 1s linear;
@@ -262,7 +283,16 @@
   </header>
 
   <div class="notice" id="notice" onclick="requestNotify()">
-    🔕 <span><b>开启系统通知</b>，即使切走页面也能收到提醒 · 点这里授权</span>
+    🔕 <span><b>开启系统通知</b>，App 在后台运行时也能弹提醒 · 点这里授权</span>
+  </div>
+
+  <div class="lockhint">
+    <div class="l-icon">🔒</div>
+    <div class="l-body">
+      <b>锁屏 / 关掉 App 时收不到提醒？</b>
+      网页无法在后台常驻，手机一锁屏就把它冻结了。给提醒点一下
+      <span class="l-chip">📅 存到日历</span>，交给 iOS 系统日历来叫你 —— 锁屏、重启都照响。
+    </div>
   </div>
 
   <!-- Composer -->
@@ -312,7 +342,7 @@
   <div class="section-title" id="doneTitle" style="display:none">已完成 <span class="count" id="cntDone">0</span></div>
   <div class="list" id="listDone"></div>
 
-  <footer>数据仅保存在本机浏览器 · 不上传任何服务器<br><span class="ver">v1.2 · 智能识别已启用</span></footer>
+  <footer>数据仅保存在本机浏览器 · 不上传任何服务器<br><span class="ver">v1.3 · 智能识别 + 日历导出</span></footer>
 </div>
 
 <!-- Ring alert -->
@@ -465,6 +495,51 @@
 
     return { remindTs, eventTs, lead, clean };
   }
+  /* ---------- 导出到系统日历（锁屏也能响） ---------- */
+  function icsEscape(s) {
+    return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;")
+                    .replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  }
+  function icsStamp(ts) {
+    return new Date(ts).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  }
+  function buildIcs(list) {
+    const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//light-reminder//ZH",
+               "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
+    list.forEach(function (it) {
+      const start = it.eventAt || it.at;          // 事件时间（没有就用提醒时间）
+      const end = start + 30 * 60000;
+      // 提醒时间相对事件时间提前多少分钟
+      const offMin = Math.max(0, Math.round((start - it.at) / 60000));
+      L.push("BEGIN:VEVENT");
+      L.push("UID:" + it.id + "@light-reminder");
+      L.push("DTSTAMP:" + icsStamp(Date.now()));
+      L.push("DTSTART:" + icsStamp(start));
+      L.push("DTEND:" + icsStamp(end));
+      L.push("SUMMARY:" + icsEscape(it.text));
+      L.push("BEGIN:VALARM");
+      L.push("TRIGGER:-PT" + offMin + "M");
+      L.push("ACTION:DISPLAY");
+      L.push("DESCRIPTION:" + icsEscape(it.text));
+      L.push("END:VALARM");
+      L.push("END:VEVENT");
+    });
+    L.push("END:VCALENDAR");
+    return L.join("\r\n");
+  }
+  function exportIcs(list, name) {
+    if (!list.length) { toast("没有可导出的提醒"); return; }
+    try {
+      const blob = new Blob([buildIcs(list)], { type: "text/calendar;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
+      toast("已生成日历事件 · 在弹出的窗口点「添加」");
+    } catch (e) { toast("导出失败，请重试"); }
+  }
+
   function leadText(lead) {
     if (!lead) return "";
     const n = lead.n === 0.5 ? "半" : lead.n;
@@ -779,6 +854,16 @@
     meta.innerHTML = '<span class="when">' + whenLabel + "</span>" + extra;
     body.appendChild(txt); body.appendChild(meta);
 
+    const acts = document.createElement("div"); acts.className = "acts";
+
+    if (!it.done) {
+      const cal = document.createElement("button");
+      cal.className = "cal"; cal.textContent = "📅 存到日历";
+      cal.title = "加到系统日历，锁屏也能提醒";
+      cal.onclick = function () { exportIcs([it], "reminder.ics"); };
+      acts.appendChild(cal);
+    }
+
     const del = document.createElement("button");
     del.className = "del"; del.textContent = "×"; del.title = "删除";
     del.onclick = function () {
@@ -786,8 +871,9 @@
       items = items.filter(x => x.id !== it.id);
       save(); render(); toast("已删除");
     };
+    acts.appendChild(del);
 
-    el.appendChild(tick); el.appendChild(body); el.appendChild(del);
+    el.appendChild(tick); el.appendChild(body); el.appendChild(acts);
     return el;
   }
 
