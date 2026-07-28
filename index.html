@@ -400,7 +400,7 @@
   <div class="section-title" id="doneTitle" style="display:none">已完成 <span class="count" id="cntDone">0</span></div>
   <div class="list" id="listDone"></div>
 
-  <footer id="foot"><span id="footNote">提醒保存在本机浏览器 · 不上传任何服务器</span><br><span class="ver">v1.4 · 智能识别 + 云端推送</span></footer>
+  <footer id="foot"><span id="footNote">提醒保存在本机浏览器 · 不上传任何服务器</span><br><span class="ver">v1.5 · 智能识别 + 云端推送</span></footer>
 </div>
 
 <!-- Ring alert -->
@@ -575,6 +575,16 @@
     for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
     return out;
   }
+  // 带超时的 fetch，避免无限转圈
+  function fetchT(url, opts, ms) {
+    const ac = new AbortController();
+    const t = setTimeout(function () { ac.abort(); }, ms || 15000);
+    const o = Object.assign({}, opts || {}, { signal: ac.signal });
+    return fetch(url, o).then(
+      function (r) { clearTimeout(t); return r; },
+      function (e) { clearTimeout(t); throw (e && e.name === "AbortError") ? new Error("连接超时，请检查后端地址是否正确") : e; }
+    );
+  }
   function pMsg(text, cls) {
     const el = $("pMsg");
     el.textContent = text || "";
@@ -607,15 +617,21 @@
     }
     this.disabled = true;
     try {
-      pMsg("正在连接…");
-      const vr = await fetch(base + "/api/vapid");
+      // ⚠️ iOS Safari 要求通知授权必须在用户点击的当下发起，
+      // 若先 await 网络请求再申请，手势上下文丢失，弹窗会被静默忽略。
+      pMsg("请在弹窗中允许通知…");
+      let perm = Notification.permission;
+      if (perm === "default") perm = await Notification.requestPermission();
+      if (perm === "denied") throw new Error("通知权限被拒绝。请到 iOS 设置 → 通知 → 轻提醒 中打开");
+      if (perm !== "granted") throw new Error("未获得通知权限，无法推送");
+
+      pMsg("正在连接服务器…");
+      const vr = await fetchT(base + "/api/vapid");
       if (!vr.ok) throw new Error("拿不到服务器公钥（" + vr.status + "）");
       const { publicKey } = await vr.json();
       if (!publicKey) throw new Error("服务器未配置 VAPID 公钥");
 
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") throw new Error("你拒绝了通知权限，无法推送");
-
+      pMsg("正在注册推送…");
       const reg = await navigator.serviceWorker.ready;
       let sub = await reg.pushManager.getSubscription();
       if (sub) {
@@ -632,7 +648,7 @@
         });
       }
 
-      const sr = await fetch(base + "/api/subscribe", {
+      const sr = await fetchT(base + "/api/subscribe", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subscription: sub.toJSON() })
       });
@@ -655,7 +671,7 @@
     if (!push.api || !push.subId) { pMsg("请先连接", "err"); return; }
     pMsg("正在发送测试推送…");
     try {
-      const r = await fetch(push.api + "/api/test", {
+      const r = await fetchT(push.api + "/api/test", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subId: push.subId })
       });
