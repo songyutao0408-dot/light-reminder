@@ -1,0 +1,19 @@
+name = "light-reminder-push"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+# 每分钟扫描一次到期提醒
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+# 允许调用本接口的前端来源（部署后按需修改）
+ALLOW_ORIGIN = "https://songyutao0408-dot.github.io"
+VAPID_CONTACT = "mailto:noreply@example.com"
+# VAPID 公钥（非机密，前端也要用；由 npm run gen-vapid 生成）
+VAPID_PUBLIC_KEY = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "light-reminder"
+database_id = "PLACEHOLDER_RUN_SETUP"

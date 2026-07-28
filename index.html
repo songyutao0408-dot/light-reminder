@@ -81,18 +81,58 @@
   .notice.hidden { display: none; }
   .notice b { font-weight: 600; }
 
-  /* Lock-screen explainer */
-  .lockhint {
-    display: flex; gap: 10px; margin: 0 0 18px; padding: 12px 14px;
-    border-radius: 13px; background: var(--card); border: 1px solid var(--line);
-    box-shadow: var(--shadow); font-size: 12.8px; color: var(--ink-2); line-height: 1.65;
+  /* Cloud push panel */
+  .push {
+    margin: 0 0 18px; border-radius: 14px; background: var(--card);
+    border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden;
   }
-  .lockhint .l-icon { font-size: 17px; flex-shrink: 0; line-height: 1.4; }
-  .lockhint b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 2px; }
-  .lockhint .l-chip {
-    display: inline-block; padding: 0 7px; border-radius: 999px;
-    background: var(--brand-soft); color: var(--brand); font-weight: 600; font-size: 12px;
+  .p-head {
+    display: flex; align-items: center; gap: 9px; padding: 12px 14px;
+    cursor: pointer; user-select: none;
   }
+  .p-head b { flex: 1; font-size: 13.5px; font-weight: 600; color: var(--ink); }
+  .p-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3);
+    flex-shrink: 0; transition: .2s;
+  }
+  .p-dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(23,195,123,.18); }
+  .p-dot.err { background: var(--danger); box-shadow: 0 0 0 3px rgba(255,91,106,.18); }
+  .p-toggle { font-size: 12.5px; color: var(--brand); font-weight: 600; flex-shrink: 0; }
+  .p-body { display: none; padding: 0 14px 14px; }
+  .push.open .p-body { display: block; }
+  .p-desc { font-size: 12.6px; color: var(--ink-2); line-height: 1.65; margin-bottom: 10px; }
+  .p-desc b { color: var(--ink); }
+  .p-warn {
+    font-size: 12.3px; color: #9a6a00; background: #fff7e6; border: 1px solid #ffe0a3;
+    padding: 8px 10px; border-radius: 9px; margin-bottom: 10px; line-height: 1.6;
+  }
+  @media (prefers-color-scheme: dark) {
+    .p-warn { color: #ffcf7a; background: #3a2f14; border-color: #5c4a1e; }
+  }
+  .p-row { display: flex; gap: 8px; }
+  .p-row input {
+    flex: 1; min-width: 0; padding: 9px 11px; border-radius: 10px; font-size: 13.5px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+    font-family: inherit; outline: none;
+  }
+  .p-row input:focus { border-color: var(--brand); }
+  .p-row button {
+    padding: 9px 16px; border-radius: 10px; border: none; cursor: pointer;
+    background: var(--brand); color: #fff; font-size: 13.5px; font-weight: 600;
+    font-family: inherit; flex-shrink: 0;
+  }
+  .p-row button:disabled { opacity: .5; cursor: not-allowed; }
+  .p-msg { font-size: 12.3px; color: var(--ink-2); margin-top: 9px; line-height: 1.6; min-height: 0; }
+  .p-msg.ok { color: var(--ok); }
+  .p-msg.err { color: var(--danger); }
+  .p-acts { display: flex; gap: 8px; margin-top: 11px; }
+  .p-ghost {
+    flex: 1; padding: 8px; border-radius: 9px; cursor: pointer; font-family: inherit;
+    font-size: 12.5px; font-weight: 600; background: var(--bg);
+    border: 1px solid var(--line); color: var(--ink-2);
+  }
+  .p-ghost:hover { border-color: var(--brand); color: var(--brand); }
+  .p-ghost.danger:hover { border-color: var(--danger); color: var(--danger); }
 
   /* Composer card */
   .composer {
@@ -286,12 +326,30 @@
     🔕 <span><b>开启系统通知</b>，App 在后台运行时也能弹提醒 · 点这里授权</span>
   </div>
 
-  <div class="lockhint">
-    <div class="l-icon">🔒</div>
-    <div class="l-body">
-      <b>锁屏 / 关掉 App 时收不到提醒？</b>
-      网页无法在后台常驻，手机一锁屏就把它冻结了。给提醒点一下
-      <span class="l-chip">📅 存到日历</span>，交给 iOS 系统日历来叫你 —— 锁屏、重启都照响。
+  <div class="push" id="pushBox">
+    <div class="p-head" id="pHead">
+      <span class="p-dot" id="pDot"></span>
+      <b id="pTitle">云端推送 · 未开启</b>
+      <span class="p-toggle" id="pToggle">设置</span>
+    </div>
+    <div class="p-body" id="pBody">
+      <p class="p-desc">
+        开启后，到点由服务器把提醒推到你手机 —— <b>锁屏、App 关掉照样收到</b>，
+        不需要页面开着。
+      </p>
+      <div id="pStandaloneWarn" class="p-warn" style="display:none">
+        ⚠️ iPhone 需要先把本页「添加到主屏幕」，再从桌面图标打开，才能接收推送。
+      </div>
+      <div class="p-row">
+        <input id="apiUrl" type="url" inputmode="url" autocapitalize="off" autocorrect="off"
+               placeholder="https://xxxx.workers.dev">
+        <button id="pConnect">连接</button>
+      </div>
+      <div class="p-msg" id="pMsg"></div>
+      <div class="p-acts">
+        <button class="p-ghost" id="pTest">发送测试推送</button>
+        <button class="p-ghost danger" id="pOff">关闭推送</button>
+      </div>
     </div>
   </div>
 
@@ -342,7 +400,7 @@
   <div class="section-title" id="doneTitle" style="display:none">已完成 <span class="count" id="cntDone">0</span></div>
   <div class="list" id="listDone"></div>
 
-  <footer>数据仅保存在本机浏览器 · 不上传任何服务器<br><span class="ver">v1.3 · 智能识别 + 日历导出</span></footer>
+  <footer id="foot"><span id="footNote">提醒保存在本机浏览器 · 不上传任何服务器</span><br><span class="ver">v1.4 · 智能识别 + 云端推送</span></footer>
 </div>
 
 <!-- Ring alert -->
@@ -495,6 +553,153 @@
 
     return { remindTs, eventTs, lead, clean };
   }
+  /* ---------- 云端推送（锁屏 / App 关闭也能收到） ---------- */
+  const PKEY = "light-reminder-push";
+  let push = loadPush();
+  function loadPush() {
+    try { return JSON.parse(localStorage.getItem(PKEY)) || {}; }
+    catch (e) { return {}; }
+  }
+  function savePush() { localStorage.setItem(PKEY, JSON.stringify(push)); }
+
+  function isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent); }
+  function isStandalone() {
+    return window.navigator.standalone === true ||
+           window.matchMedia("(display-mode: standalone)").matches;
+  }
+  function urlB64ToUint8(base64) {
+    const pad = "=".repeat((4 - base64.length % 4) % 4);
+    const b64 = (base64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(b64);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+  function pMsg(text, cls) {
+    const el = $("pMsg");
+    el.textContent = text || "";
+    el.className = "p-msg" + (cls ? " " + cls : "");
+  }
+  function renderPushState() {
+    const on = !!(push.api && push.subId);
+    $("pDot").className = "p-dot" + (on ? " on" : "");
+    $("pTitle").textContent = on ? "云端推送 · 已开启" : "云端推送 · 未开启";
+    $("apiUrl").value = push.api || "";
+    const fn = $("footNote");
+    if (fn) fn.textContent = on
+      ? "提醒保存在本机 · 已开启推送，待提醒会同步到你自己的服务器"
+      : "提醒保存在本机浏览器 · 不上传任何服务器";
+    $("pStandaloneWarn").style.display = (isIOS() && !isStandalone()) ? "block" : "none";
+  }
+
+  $("pHead").addEventListener("click", function () {
+    $("pushBox").classList.toggle("open");
+  });
+
+  $("pConnect").addEventListener("click", async function () {
+    const base = $("apiUrl").value.trim().replace(/\/+$/, "");
+    if (!/^https:\/\/.+/.test(base)) { pMsg("请填入后端地址（https:// 开头）", "err"); return; }
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      pMsg("此浏览器不支持推送", "err"); return;
+    }
+    if (isIOS() && !isStandalone()) {
+      pMsg("iPhone 请先「添加到主屏幕」，再从桌面图标打开本页", "err"); return;
+    }
+    this.disabled = true;
+    try {
+      pMsg("正在连接…");
+      const vr = await fetch(base + "/api/vapid");
+      if (!vr.ok) throw new Error("拿不到服务器公钥（" + vr.status + "）");
+      const { publicKey } = await vr.json();
+      if (!publicKey) throw new Error("服务器未配置 VAPID 公钥");
+
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") throw new Error("你拒绝了通知权限，无法推送");
+
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        // 换了服务器就要重订阅
+        const cur = btoa(String.fromCharCode.apply(null,
+          new Uint8Array(sub.options.applicationServerKey || new ArrayBuffer(0))))
+          .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+        if (cur !== publicKey) { await sub.unsubscribe(); sub = null; }
+      }
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlB64ToUint8(publicKey)
+        });
+      }
+
+      const sr = await fetch(base + "/api/subscribe", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: sub.toJSON() })
+      });
+      if (!sr.ok) throw new Error("订阅失败（" + sr.status + "）");
+      const { subId } = await sr.json();
+
+      push = { api: base, subId: subId };
+      savePush(); renderPushState();
+      const n = await syncPush();
+      pMsg("✅ 已开启，" + (n >= 0 ? "已同步 " + n + " 条提醒" : "但同步失败"), "ok");
+      toast("云端推送已开启 🎉");
+    } catch (e) {
+      pMsg("❌ " + (e && e.message || e), "err");
+    } finally {
+      this.disabled = false;
+    }
+  });
+
+  $("pTest").addEventListener("click", async function () {
+    if (!push.api || !push.subId) { pMsg("请先连接", "err"); return; }
+    pMsg("正在发送测试推送…");
+    try {
+      const r = await fetch(push.api + "/api/test", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subId: push.subId })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) pMsg("已发送，稍等一两秒看通知（可以先锁屏试试）", "ok");
+      else pMsg("发送失败：" + (d.error || r.status), "err");
+    } catch (e) { pMsg("发送失败：" + e.message, "err"); }
+  });
+
+  $("pOff").addEventListener("click", async function () {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+    } catch (e) {}
+    push = {}; savePush(); renderPushState();
+    pMsg("已关闭云端推送", "");
+    toast("已关闭云端推送");
+  });
+
+  // 把待提醒同步到服务器；返回同步条数，失败返回 -1
+  async function syncPush() {
+    if (!push.api || !push.subId) return -1;
+    const pending = items
+      .filter(it => !it.done && !it.fired && it.at > Date.now() - 60000)
+      .map(it => {
+        const o = { id: it.id, text: it.text, at: it.at };
+        if (it.eventAt && it.eventAt !== it.at) {
+          // 时间文案在本机按本地时区算好，服务端不做换算
+          o.note = (it.lead ? it.lead + " · " : "") + "事件 " + fmt(it.eventAt);
+        }
+        return o;
+      });
+    try {
+      const r = await fetch(push.api + "/api/sync", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subId: push.subId, items: pending })
+      });
+      if (!r.ok) return -1;
+      const d = await r.json();
+      return d.pending ?? pending.length;
+    } catch (e) { return -1; }
+  }
+
   /* ---------- 导出到系统日历（锁屏也能响） ---------- */
   function icsEscape(s) {
     return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;")
@@ -722,6 +927,7 @@
     else toast("已添加 · " + relative(target) + "提醒你");
     // nudge for notification permission on first add
     maybeAskNotify();
+    syncPush();
   }
 
   /* ---------- scheduling ---------- */
@@ -798,7 +1004,7 @@
     const it = items.find(x => x.id === ringingId);
     if (it) {
       it.at = Date.now() + 5 * 60000; it.fired = false; it.done = false;
-      save(); schedule(it); toast("好的，5 分钟后再叫你");
+      save(); schedule(it); syncPush(); toast("好的，5 分钟后再叫你");
     }
     closeAlert(); render();
   };
@@ -836,7 +1042,7 @@
     tick.onclick = function () {
       it.done = !it.done;
       if (it.done) clearTimeout(timers[it.id]); else { it.fired = false; schedule(it); }
-      save(); render();
+      save(); render(); syncPush();
     };
 
     const body = document.createElement("div"); body.className = "body";
@@ -869,7 +1075,7 @@
     del.onclick = function () {
       clearTimeout(timers[it.id]);
       items = items.filter(x => x.id !== it.id);
-      save(); render(); toast("已删除");
+      save(); render(); syncPush(); toast("已删除");
     };
     acts.appendChild(del);
 
@@ -942,6 +1148,8 @@
   render();
   refreshHint();
   updateNotice();
+  renderPushState();
+  syncPush();
   // fire any that were already due when the app opened
   items.forEach(it => { if (!it.done && !it.fired && it.at <= Date.now()) fire(it.id); });
 

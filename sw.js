@@ -41,6 +41,44 @@ self.addEventListener("message", (e) => {
   if (e.data === "skip-waiting") self.skipWaiting();
 });
 
+/* ---------- 推送：App 关闭 / 锁屏时由服务器触发 ---------- */
+self.addEventListener("push", (e) => {
+  let data = { title: "⏰ 轻提醒", body: "有一条提醒到点了" };
+  try {
+    if (e.data) {
+      const d = e.data.json();
+      data = { title: d.title || data.title, body: d.body || data.body, id: d.id };
+    }
+  } catch (err) {
+    try { data.body = e.data.text(); } catch (e2) {}
+  }
+
+  e.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "./icons/icon-192.png",
+      badge: "./icons/icon-192.png",
+      tag: data.id || "reminder",
+      renotify: true,
+      requireInteraction: true,
+      vibrate: [200, 100, 200, 100, 200],
+      data: { id: data.id }
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ("focus" in c) return c.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow("./");
+    })
+  );
+});
+
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;

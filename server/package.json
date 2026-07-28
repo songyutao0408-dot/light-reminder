@@ -1,0 +1,14 @@
+{
+  "name": "light-reminder-push",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "gen-vapid": "node scripts/gen-vapid.mjs",
+    "test": "node test/push.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.114.0"
+  }
+}
