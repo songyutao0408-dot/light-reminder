@@ -414,7 +414,7 @@
   <div class="section-title" id="doneTitle" style="display:none">已完成 <span class="count" id="cntDone">0</span></div>
   <div class="list" id="listDone"></div>
 
-  <footer id="foot"><span id="footNote">提醒保存在本机浏览器 · 不上传任何服务器</span><br><span class="ver">v1.7 · 智能识别 + 云端推送</span></footer>
+  <footer id="foot"><span id="footNote">提醒保存在本机浏览器 · 不上传任何服务器</span><br><span class="ver">v1.8 · 智能识别 + 云端推送</span></footer>
 </div>
 
 <!-- Ring alert -->
@@ -486,10 +486,13 @@
     else if (/晚/.test(raw)) period = "pm";
     else if (/早/.test(raw)) period = "am";
 
-    if (m = text.match(new RegExp(NUM_RE + "\\s*分钟?后"))) {
-      const n = cnNum(m[1]); if (!isNaN(n)) { d = new Date(now.getTime() + n * 60000); dayFound = timeFound = true; eat(m[0]); }
+    let exactFromRelative = false;   // 「X分钟/小时后」已算出精确时刻，后面不得再覆盖
+    if (m = text.match(/半\s*(?:个)?\s*小时后/)) {
+      d = new Date(now.getTime() + 30 * 60000); dayFound = timeFound = exactFromRelative = true; eat(m[0]);
+    } else if (m = text.match(new RegExp(NUM_RE + "\\s*分钟?后"))) {
+      const n = cnNum(m[1]); if (!isNaN(n)) { d = new Date(now.getTime() + n * 60000); dayFound = timeFound = exactFromRelative = true; eat(m[0]); }
     } else if (m = text.match(new RegExp(NUM_RE + "\\s*(?:个)?小时后"))) {
-      const n = cnNum(m[1]); if (!isNaN(n)) { d = new Date(now.getTime() + n * 3600000); dayFound = timeFound = true; eat(m[0]); }
+      const n = cnNum(m[1]); if (!isNaN(n)) { d = new Date(now.getTime() + n * 3600000); dayFound = timeFound = exactFromRelative = true; eat(m[0]); }
     } else if (m = text.match(new RegExp(NUM_RE + "\\s*天后"))) {
       const n = cnNum(m[1]); if (!isNaN(n)) { d.setDate(d.getDate() + n); dayFound = true; eat(m[0]); }
     }
@@ -538,7 +541,9 @@
       else if ((period === "am" || period === "dawn") && hour === 12) hour = 0;
       else if (period === "noon" && hour < 12) hour = 12;
       d.setHours(hour, minute, 0, 0);
-    } else {
+    } else if (!exactFromRelative) {
+      // 只给了日期没给时刻时才默认早 9 点；
+      // 「十分钟后」这类已算出精确时刻，绝不能覆盖
       d.setHours(9, 0, 0, 0);
     }
     if (!dayFound && d.getTime() < now.getTime() - 30000) d.setDate(d.getDate() + 1);
@@ -741,7 +746,7 @@
     out.classList.add("show");
     out.textContent = "检测中…";
     const L = [];
-    L.push("版本      : v1.7");
+    L.push("版本      : v1.8");
     L.push("页面地址  : " + location.origin + location.pathname);
     L.push("从主屏打开: " + (isStandalone() ? "是" : "否 ← iOS 必须为「是」"));
     L.push("iOS 设备  : " + (isIOS() ? "是" : "否"));
@@ -866,6 +871,9 @@
       toast("已生成日历事件 · 在弹出的窗口点「添加」");
     } catch (e) { toast("导出失败，请重试"); }
   }
+
+  // 供自动化测试调用（不影响正常使用）
+  if (typeof window !== "undefined") window.__parseZh = parseZh;
 
   function leadText(lead) {
     if (!lead) return "";
