@@ -205,7 +205,8 @@
   }
   .empty .big { font-size: 40px; margin-bottom: 10px; }
 
-  footer { text-align: center; color: var(--ink-3); font-size: 12px; margin-top: 40px; }
+  footer { text-align: center; color: var(--ink-3); font-size: 12px; margin-top: 40px; line-height: 1.9; }
+  footer .ver { color: var(--brand); opacity: .75; font-size: 11.5px; }
 
   /* Toast / alert overlay */
   .overlay {
@@ -311,7 +312,7 @@
   <div class="section-title" id="doneTitle" style="display:none">已完成 <span class="count" id="cntDone">0</span></div>
   <div class="list" id="listDone"></div>
 
-  <footer>数据仅保存在本机浏览器 · 不上传任何服务器</footer>
+  <footer>数据仅保存在本机浏览器 · 不上传任何服务器<br><span class="ver">v1.2 · 智能识别已启用</span></footer>
 </div>
 
 <!-- Ring alert -->
@@ -859,9 +860,22 @@
   items.forEach(it => { if (!it.done && !it.fired && it.at <= Date.now()) fire(it.id); });
 
   // register service worker (offline + installable)
+  // 网络优先策略 + 主动检查更新，确保新版本能推下来
   if ("serviceWorker" in navigator) {
+    let reloading = false;
+    navigator.serviceWorker.addEventListener("controllerchange", function () {
+      if (reloading) return;
+      reloading = true;
+      location.reload();          // 新版本接管后自动刷新一次
+    });
     window.addEventListener("load", function () {
-      navigator.serviceWorker.register("sw.js").catch(function () {});
+      navigator.serviceWorker.register("sw.js").then(function (reg) {
+        reg.update();
+        // 每次切回 App 时检查一次更新
+        document.addEventListener("visibilitychange", function () {
+          if (!document.hidden) reg.update();
+        });
+      }).catch(function () {});
     });
   }
 })();

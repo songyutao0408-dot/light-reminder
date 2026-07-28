@@ -1,5 +1,8 @@
-/* 轻提醒 Service Worker —— 缓存应用外壳，支持离线打开 */
-const CACHE = "light-reminder-v1";
+/* 轻提醒 Service Worker
+ * 策略：网络优先（network-first）——联网时永远拿最新版本，断网才用缓存兜底。
+ * 之前用缓存优先会把旧页面焊死、新版本推不下去，已改。
+ */
+const CACHE = "light-reminder-v3";
 const ASSETS = [
   "./",
   "./index.html",
@@ -11,29 +14,57 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // 新版本立刻就位，不等旧页面全部关闭
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(ASSETS))
+      .catch(() => {})
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window" }))
+      .then((clients) => {
+        // 旧页面自身没有自动更新逻辑，这里主动把它们刷成新版
+        clients.forEach((c) => { if (c.navigate) c.navigate(c.url).catch(() => {}); });
+      })
+      .catch(() => {})
   );
 });
 
+self.addEventListener("message", (e) => {
+  if (e.data === "skip-waiting") self.skipWaiting();
+});
+
 self.addEventListener("fetch", (e) => {
-  if (e.request.method !== "GET") return;
+  const req = e.request;
+  if (req.method !== "GET") return;
+
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;   // 跨域交给浏览器自己处理
+
+  // 网络优先：拿到新的就用新的并回写缓存；断网/失败才回退缓存
   e.respondWith(
-    caches.match(e.request).then((hit) =>
-      hit || fetch(e.request).then((res) => {
-        // 顺手把新请求到的同源资源缓存起来
-        const copy = res.clone();
-        if (res.ok && e.request.url.startsWith(self.location.origin)) {
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
         }
         return res;
-      }).catch(() => caches.match("./index.html"))
-    )
+      })
+      .catch(() =>
+        caches.match(req).then((hit) => {
+          if (hit) return hit;
+          // 导航请求兜底到首页，保证离线也能打开 App
+          if (req.mode === "navigate") return caches.match("./index.html");
+          return Response.error();
+        })
+      )
   );
 });
