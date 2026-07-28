@@ -39,18 +39,43 @@ say("—————————————————————————
 
 /* 1. 登录检查 */
 step(1, "检查 Cloudflare 登录状态");
+const hasToken = !!process.env.CLOUDFLARE_API_TOKEN;
+
 let logged = false;
 try {
   const who = run("npx wrangler whoami");
   logged = !/not authenticated|You are not logged in/i.test(who);
 } catch (e) { logged = false; }
 
-if (!logged) {
-  warn("尚未登录，即将打开浏览器，请点 Allow 授权");
-  runLive("npx wrangler login");
-  okp("登录完成");
+if (logged) {
+  okp(hasToken ? "已通过 API Token 认证" : "已登录");
+} else if (hasToken) {
+  throw new Error(
+    "检测到 CLOUDFLARE_API_TOKEN，但校验没通过。\n" +
+    "  请确认 Token 没复制错、且具备 Workers Scripts:Edit 与 D1:Edit 权限。"
+  );
 } else {
-  okp("已登录");
+  warn("尚未登录，即将打开浏览器，请点 Allow 授权");
+  try {
+    runLive("npx wrangler login");
+    okp("登录完成");
+  } catch (e) {
+    say("");
+    say("\x1b[33m浏览器授权失败了（常见于公司电脑：策略限制导致 wrangler 无法拉起浏览器，");
+    say("报错形如 spawn UNKNOWN）。\x1b[0m");
+    say("");
+    say("请改用 \x1b[1mAPI Token\x1b[0m 方式，三步：");
+    say("  1. 打开 https://dash.cloudflare.com/profile/api-tokens");
+    say("     Create Token → Custom token，勾选权限：");
+    say("       Account | Workers Scripts | Edit");
+    say("       Account | D1              | Edit");
+    say("       Account | Account Settings| Read");
+    say("  2. 复制生成的 Token，在本窗口执行（等号两边不要留空格）：");
+    say("       \x1b[36mset CLOUDFLARE_API_TOKEN=你的Token\x1b[0m");
+    say("  3. 重新运行：\x1b[36mnpm run setup\x1b[0m");
+    say("");
+    throw new Error("需要先完成认证");
+  }
 }
 
 /* 2. 数据库 */

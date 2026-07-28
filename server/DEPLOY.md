@@ -64,6 +64,37 @@ npm install
 npm run setup
 ```
 
+### 如果报 `spawn UNKNOWN` / 浏览器不弹授权
+
+公司电脑常见：系统策略不让 wrangler 拉起浏览器，OAuth 登录走不通。
+改用 **API Token**（同样免费，一次性）：
+
+1. 打开 https://dash.cloudflare.com/profile/api-tokens
+   → **Create Token** → 最下面的 **Custom token** → **Get started**
+2. 权限（Permissions）加三行：
+
+   | | | |
+   |---|---|---|
+   | Account | Workers Scripts | Edit |
+   | Account | D1 | Edit |
+   | Account | Account Settings | Read |
+
+3. **Account Resources** 选 `Include | 你的账号`
+4. 底部 **Continue to summary** → **Create Token** → **复制那串 Token**（只显示一次）
+5. 回到 cmd 窗口执行（`=` 两边不要有空格）：
+
+```bat
+set CLOUDFLARE_API_TOKEN=把你复制的Token粘贴到这里
+```
+
+6. 再跑一次：
+
+```bat
+npm run setup
+```
+
+> `set` 只对当前窗口有效。若关掉窗口重来，需要重新执行一次第 5 条。
+
 这一条命令会自动完成：登录 Cloudflare、建数据库、生成推送密钥、建表、部署上线。
 中途会：
 
