@@ -26,16 +26,31 @@ https://github.com/songyutao0408-dot/light-reminder/archive/refs/heads/main.zip
 
 ## 第 3 步：打开终端
 
-按 `Win + X`，选「**终端**」或「**Windows PowerShell**」。
+按 `Win + R`，输入 `cmd`，回车 —— 打开「命令提示符」。
+
+> 💡 也可以在开始菜单搜「Node.js command prompt」，效果一样。
+> 若用 PowerShell 报 `0x800704EC`（被组策略禁用），就改用上面的 cmd。
 
 先把目录切到代码里（整行复制粘贴，回车）：
 
-```powershell
-cd "$HOME\Desktop\light-reminder-main\server"
+```bat
+cd /d "%USERPROFILE%\Desktop\light-reminder-main\server"
 ```
 
-> 如果提示找不到路径，说明解压位置不对。在文件夹地址栏上点一下复制完整路径，
-> 用 `cd "粘贴的路径\server"` 代替。
+如果提示找不到路径，多半是桌面被 OneDrive 接管了，改用这条：
+
+```bat
+cd /d "%USERPROFILE%\OneDrive\Desktop\light-reminder-main\server"
+```
+
+> 还是不行的话：打开那个 `server` 文件夹，点一下上方地址栏复制完整路径，
+> 用 `cd /d "粘贴的路径"` 代替。
+
+顺便确认 Node 版本（需要 v20 或更高）：
+
+```bat
+node -v
+```
 
 ## 第 4 步：安装依赖
 
