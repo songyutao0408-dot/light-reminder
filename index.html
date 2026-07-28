@@ -353,7 +353,12 @@
         <button id="pConnect">连接</button>
       </div>
       <div class="p-msg" id="pMsg"></div>
+      <div class="p-warn" id="pDirtyWarn" style="display:none">
+        ⚠️ 有 <b id="pDirtyN">0</b> 条提醒还没同步到服务器，到点<b>不会</b>推送给你。
+        请连上网络（必要时开一下 VPN）后点下面的「立即同步」。
+      </div>
       <div class="p-acts">
+        <button class="p-ghost" id="pSync">🔄 立即同步</button>
         <button class="p-ghost" id="pTest">发送测试推送</button>
         <button class="p-ghost" id="pDiag">🔍 诊断</button>
         <button class="p-ghost danger" id="pOff">关闭推送</button>
@@ -409,7 +414,7 @@
   <div class="section-title" id="doneTitle" style="display:none">已完成 <span class="count" id="cntDone">0</span></div>
   <div class="list" id="listDone"></div>
 
-  <footer id="foot"><span id="footNote">提醒保存在本机浏览器 · 不上传任何服务器</span><br><span class="ver">v1.6 · 智能识别 + 云端推送</span></footer>
+  <footer id="foot"><span id="footNote">提醒保存在本机浏览器 · 不上传任何服务器</span><br><span class="ver">v1.7 · 智能识别 + 云端推送</span></footer>
 </div>
 
 <!-- Ring alert -->
@@ -604,10 +609,21 @@
     el.textContent = text || "";
     el.className = "p-msg" + (cls ? " " + cls : "");
   }
+  function pendingCount() {
+    return items.filter(it => !it.done && !it.fired && it.at > Date.now() - 60000).length;
+  }
   function renderPushState() {
     const on = !!(push.api && push.subId);
-    $("pDot").className = "p-dot" + (on ? " on" : "");
-    $("pTitle").textContent = on ? "云端推送 · 已开启" : "云端推送 · 未开启";
+    const dirty = on && push.dirty && pendingCount() > 0;
+    $("pDot").className = "p-dot" + (on ? (dirty ? " err" : " on") : "");
+    $("pTitle").textContent = !on ? "云端推送 · 未开启"
+      : dirty ? "云端推送 · 有 " + pendingCount() + " 条待同步"
+              : "云端推送 · 已开启";
+    const dw = $("pDirtyWarn");
+    if (dw) {
+      dw.style.display = dirty ? "block" : "none";
+      $("pDirtyN").textContent = pendingCount();
+    }
     $("apiUrl").value = push.api || "";
     const fn = $("footNote");
     if (fn) fn.textContent = on
@@ -712,12 +728,20 @@
     } catch (e) { pMsg("发送失败：" + e.message, "err"); }
   });
 
+  $("pSync").addEventListener("click", async function () {
+    if (!push.api || !push.subId) { pMsg("请先连接后端", "err"); return; }
+    pMsg("正在同步…");
+    const n = await syncPush();
+    if (n >= 0) { pMsg("✅ 已同步 " + n + " 条待提醒", "ok"); toast("同步完成"); }
+    else pMsg("❌ 同步失败，连不上后端（国内需开 VPN）", "err");
+  });
+
   $("pDiag").addEventListener("click", async function () {
     const out = $("pDiagOut");
     out.classList.add("show");
     out.textContent = "检测中…";
     const L = [];
-    L.push("版本      : v1.6");
+    L.push("版本      : v1.7");
     L.push("页面地址  : " + location.origin + location.pathname);
     L.push("从主屏打开: " + (isStandalone() ? "是" : "否 ← iOS 必须为「是」"));
     L.push("iOS 设备  : " + (isIOS() ? "是" : "否"));
@@ -784,14 +808,18 @@
         return o;
       });
     try {
-      const r = await fetch(push.api + "/api/sync", {
+      const r = await fetchT(push.api + "/api/sync", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subId: push.subId, items: pending })
-      });
-      if (!r.ok) return -1;
+      }, 12000);
+      if (!r.ok) throw new Error("HTTP " + r.status);
       const d = await r.json();
+      push.dirty = false; push.lastSync = Date.now(); savePush(); renderPushState();
       return d.pending ?? pending.length;
-    } catch (e) { return -1; }
+    } catch (e) {
+      push.dirty = true; savePush(); renderPushState();
+      return -1;
+    }
   }
 
   /* ---------- 导出到系统日历（锁屏也能响） ---------- */
@@ -1221,6 +1249,14 @@
     document.removeEventListener("pointerdown", unlockAudio);
   }
   document.addEventListener("pointerdown", unlockAudio);
+
+  // 网络恢复或回到前台时，自动把没同步上的提醒补传
+  window.addEventListener("online", function () {
+    if (push.api && push.subId && push.dirty) syncPush();
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && push.api && push.subId && push.dirty) syncPush();
+  });
 
   // re-check on tab focus (catches reminders that "fired" while backgrounded)
   document.addEventListener("visibilitychange", function () {
