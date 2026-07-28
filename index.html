@@ -133,6 +133,13 @@
   }
   .p-ghost:hover { border-color: var(--brand); color: var(--brand); }
   .p-ghost.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .p-diag {
+    display: none; margin-top: 10px; padding: 10px; border-radius: 9px;
+    background: var(--bg); border: 1px solid var(--line); color: var(--ink-2);
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px;
+    line-height: 1.7; white-space: pre-wrap; word-break: break-all;
+  }
+  .p-diag.show { display: block; }
 
   /* Composer card */
   .composer {
@@ -348,8 +355,10 @@
       <div class="p-msg" id="pMsg"></div>
       <div class="p-acts">
         <button class="p-ghost" id="pTest">发送测试推送</button>
+        <button class="p-ghost" id="pDiag">🔍 诊断</button>
         <button class="p-ghost danger" id="pOff">关闭推送</button>
       </div>
+      <pre class="p-diag" id="pDiagOut"></pre>
     </div>
   </div>
 
@@ -400,7 +409,7 @@
   <div class="section-title" id="doneTitle" style="display:none">已完成 <span class="count" id="cntDone">0</span></div>
   <div class="list" id="listDone"></div>
 
-  <footer id="foot"><span id="footNote">提醒保存在本机浏览器 · 不上传任何服务器</span><br><span class="ver">v1.5 · 智能识别 + 云端推送</span></footer>
+  <footer id="foot"><span id="footNote">提醒保存在本机浏览器 · 不上传任何服务器</span><br><span class="ver">v1.6 · 智能识别 + 云端推送</span></footer>
 </div>
 
 <!-- Ring alert -->
@@ -585,6 +594,11 @@
       function (e) { clearTimeout(t); throw (e && e.name === "AbortError") ? new Error("连接超时，请检查后端地址是否正确") : e; }
     );
   }
+  function bytesToB64u2(arr) {
+    let str = "";
+    for (let i = 0; i < arr.length; i++) str += String.fromCharCode(arr[i]);
+    return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
   function pMsg(text, cls) {
     const el = $("pMsg");
     el.textContent = text || "";
@@ -632,20 +646,37 @@
       if (!publicKey) throw new Error("服务器未配置 VAPID 公钥");
 
       pMsg("正在注册推送…");
-      const reg = await navigator.serviceWorker.ready;
-      let sub = await reg.pushManager.getSubscription();
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, rj) => setTimeout(function () {
+          rj(new Error("Service Worker 未就绪，请彻底关闭 App 后重新打开再试"));
+        }, 10000))
+      ]);
+      if (!reg.pushManager) throw new Error("此环境不支持推送（请从主屏图标打开，勿用浏览器标签页）");
+
+      let sub = null;
+      try { sub = await reg.pushManager.getSubscription(); } catch (e) { sub = null; }
       if (sub) {
-        // 换了服务器就要重订阅
-        const cur = btoa(String.fromCharCode.apply(null,
-          new Uint8Array(sub.options.applicationServerKey || new ArrayBuffer(0))))
-          .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-        if (cur !== publicKey) { await sub.unsubscribe(); sub = null; }
+        // 换了服务器公钥就要重新订阅；拿不到旧公钥时一律重订
+        let cur = "";
+        try {
+          const k = sub.options && sub.options.applicationServerKey;
+          if (k) cur = bytesToB64u2(new Uint8Array(k));
+        } catch (e) { cur = ""; }
+        if (cur !== publicKey) {
+          try { await sub.unsubscribe(); } catch (e) {}
+          sub = null;
+        }
       }
       if (!sub) {
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlB64ToUint8(publicKey)
-        });
+        try {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlB64ToUint8(publicKey)
+          });
+        } catch (e) {
+          throw new Error("订阅推送失败：" + (e && (e.name + " / " + e.message) || e));
+        }
       }
 
       const sr = await fetchT(base + "/api/subscribe", {
@@ -679,6 +710,53 @@
       if (r.ok) pMsg("已发送，稍等一两秒看通知（可以先锁屏试试）", "ok");
       else pMsg("发送失败：" + (d.error || r.status), "err");
     } catch (e) { pMsg("发送失败：" + e.message, "err"); }
+  });
+
+  $("pDiag").addEventListener("click", async function () {
+    const out = $("pDiagOut");
+    out.classList.add("show");
+    out.textContent = "检测中…";
+    const L = [];
+    L.push("版本      : v1.6");
+    L.push("页面地址  : " + location.origin + location.pathname);
+    L.push("从主屏打开: " + (isStandalone() ? "是" : "否 ← iOS 必须为「是」"));
+    L.push("iOS 设备  : " + (isIOS() ? "是" : "否"));
+    L.push("通知权限  : " + (("Notification" in window) ? Notification.permission : "不支持"));
+    L.push("PushManager: " + (("PushManager" in window) ? "支持" : "不支持 ← 收不到推送"));
+    L.push("后端地址  : " + (push.api || "(未填)"));
+    L.push("订阅ID    : " + (push.subId || "(无)"));
+
+    try {
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, rj) => setTimeout(() => rj(new Error("超时")), 6000))
+      ]);
+      L.push("ServiceWorker: 就绪");
+      try {
+        const s2 = await reg.pushManager.getSubscription();
+        L.push("已有订阅  : " + (s2 ? "有" : "无"));
+      } catch (e) { L.push("已有订阅  : 查询失败 " + e.name); }
+    } catch (e) {
+      L.push("ServiceWorker: 未就绪(" + e.message + ")");
+    }
+
+    const base = ($("apiUrl").value.trim() || push.api || "").replace(/\/+$/, "");
+    if (base) {
+      try {
+        const r = await fetchT(base + "/api/health", {}, 10000);
+        L.push("后端连通  : HTTP " + r.status + (r.ok ? " ✅" : " ❌"));
+      } catch (e) {
+        L.push("后端连通  : 失败 ← " + (e && e.message || e));
+      }
+      try {
+        const r2 = await fetchT(base + "/api/vapid", {}, 10000);
+        const j = await r2.json().catch(() => ({}));
+        L.push("服务器公钥: " + (j.publicKey ? j.publicKey.slice(0, 12) + "…(长度" + j.publicKey.length + ")" : "缺失 ❌"));
+      } catch (e) {
+        L.push("服务器公钥: 取不到 ← " + (e && e.message || e));
+      }
+    }
+    out.textContent = L.join("\n");
   });
 
   $("pOff").addEventListener("click", async function () {
