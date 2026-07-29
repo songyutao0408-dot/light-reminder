@@ -10,6 +10,8 @@ crons = ["* * * * *"]
 # 允许调用本接口的前端来源（部署后按需修改）
 ALLOW_ORIGIN = "https://songyutao0408-dot.github.io"
 VAPID_CONTACT = "mailto:noreply@example.com"
+# 一条提醒最多推几次（每次隔 1 分钟，点开通知即停止）。嫌吵改成 1
+REPEAT_TIMES = "3"
 # VAPID 公钥（非机密，前端也要用；由 npm run gen-vapid 生成）
 VAPID_PUBLIC_KEY = ""
 

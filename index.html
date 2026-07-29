@@ -414,7 +414,7 @@
   <div class="section-title" id="doneTitle" style="display:none">已完成 <span class="count" id="cntDone">0</span></div>
   <div class="list" id="listDone"></div>
 
-  <footer id="foot"><span id="footNote">提醒保存在本机浏览器 · 不上传任何服务器</span><br><span class="ver">v1.8 · 智能识别 + 云端推送</span></footer>
+  <footer id="foot"><span id="footNote">提醒保存在本机浏览器 · 不上传任何服务器</span><br><span class="ver">v1.9 · 智能识别 + 云端推送</span></footer>
 </div>
 
 <!-- Ring alert -->
@@ -579,7 +579,17 @@
     try { return JSON.parse(localStorage.getItem(PKEY)) || {}; }
     catch (e) { return {}; }
   }
-  function savePush() { localStorage.setItem(PKEY, JSON.stringify(push)); }
+  function savePush() {
+    localStorage.setItem(PKEY, JSON.stringify(push));
+    // Service Worker 读不到 localStorage，另存一份到 Cache 供其确认通知用
+    try {
+      if (window.caches) {
+        caches.open("lr-config").then(function (c) {
+          c.put("/__push_cfg", new Response(JSON.stringify({ api: push.api || "", subId: push.subId || "" })));
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
 
   function isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent); }
   function isStandalone() {
@@ -746,7 +756,7 @@
     out.classList.add("show");
     out.textContent = "检测中…";
     const L = [];
-    L.push("版本      : v1.8");
+    L.push("版本      : v1.9");
     L.push("页面地址  : " + location.origin + location.pathname);
     L.push("从主屏打开: " + (isStandalone() ? "是" : "否 ← iOS 必须为「是」"));
     L.push("iOS 设备  : " + (isIOS() ? "是" : "否"));

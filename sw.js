@@ -67,16 +67,47 @@ self.addEventListener("push", (e) => {
   );
 });
 
+// 读取页面写入的后端配置（SW 访问不到 localStorage）
+async function pushCfg() {
+  try {
+    const c = await caches.open("lr-config");
+    const r = await c.match("/__push_cfg");
+    return r ? await r.json() : null;
+  } catch (e) { return null; }
+}
+
+// 告诉服务器「我看到了」，后续的重复提醒不用再发
+async function ackReminder(id) {
+  if (!id || id === "test") return;
+  const cfg = await pushCfg();
+  if (!cfg || !cfg.api || !cfg.subId) return;
+  try {
+    await fetch(cfg.api + "/api/ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subId: cfg.subId, id })
+    });
+  } catch (e) {}
+}
+
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
-  e.waitUntil(
+  const id = e.notification.data && e.notification.data.id;
+  e.waitUntil(Promise.all([
+    ackReminder(id),
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       for (const c of list) {
         if ("focus" in c) return c.focus();
       }
       if (self.clients.openWindow) return self.clients.openWindow("./");
     })
-  );
+  ]));
+});
+
+// 直接划掉通知也算看到了
+self.addEventListener("notificationclose", (e) => {
+  const id = e.notification.data && e.notification.data.id;
+  e.waitUntil(ackReminder(id));
 });
 
 self.addEventListener("fetch", (e) => {

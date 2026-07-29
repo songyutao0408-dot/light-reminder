@@ -76,6 +76,16 @@ async function handleSync(req, env) {
   return json({ ok: true, pending: row?.n ?? 0 }, 200, env);
 }
 
+async function handleAck(req, env) {
+  const { subId, id } = await req.json();
+  if (!subId || !id) return json({ error: "参数不合法" }, 400, env);
+  // 置为一个大值，后续重复提醒全部跳过
+  await env.DB.prepare(
+    "UPDATE reminders SET sent = 999 WHERE sub_id = ? AND id = ?"
+  ).bind(subId, id).run();
+  return json({ ok: true }, 200, env);
+}
+
 async function handleTest(req, env) {
   const { subId } = await req.json();
   const sub = await env.DB.prepare(
@@ -95,30 +105,40 @@ async function handleTest(req, env) {
 
 /* ---------- 定时扫描 ---------- */
 async function runDue(env) {
+  // 一条提醒最多推几次（每次间隔 1 分钟，点开后停止）
+  const REPEAT = Math.max(1, parseInt(env.REPEAT_TIMES || "3", 10));
   // 提前 20 秒取，抵消每分钟一次的调度粒度
   const now = Date.now() + 20000;
+  // 10 分钟前就该发的不再补发，避免服务中断后一次性轰炸
+  const floor = Date.now() - 10 * 60000;
+
   const { results } = await env.DB.prepare(
-    `SELECT r.id, r.sub_id, r.text, r.at, r.note,
+    `SELECT r.id, r.sub_id, r.text, r.at, r.note, r.sent,
             s.endpoint, s.p256dh, s.auth
        FROM reminders r JOIN subs s ON s.id = r.sub_id
-      WHERE r.sent = 0 AND r.at <= ?
+      WHERE r.sent < ? AND r.at <= ? AND r.at > ?
       ORDER BY r.at LIMIT 100`
-  ).bind(now).all();
+  ).bind(REPEAT, now, floor).all();
 
   if (!results?.length) return { sent: 0 };
 
   let sent = 0;
   for (const row of results) {
-    // 先标记，避免下一分钟重复推送
+    const times = (row.sent || 0) + 1;
+    const finished = times >= REPEAT;
+    // 先落库，避免下一分钟重复推送；没推满就顺延 1 分钟再推一次
     await env.DB.prepare(
-      "UPDATE reminders SET sent = 1 WHERE sub_id = ? AND id = ?"
-    ).bind(row.sub_id, row.id).run();
+      "UPDATE reminders SET sent = ?, at = ? WHERE sub_id = ? AND id = ?"
+    ).bind(times, finished ? row.at : row.at + 60000, row.sub_id, row.id).run();
 
     // note 由前端按本机时区预先格式化好，服务端不做时间换算，避免时区错位
-    const body = row.note ? `${row.text}（${row.note}）` : row.text;
+    let body = row.note ? `${row.text}（${row.note}）` : row.text;
+    if (times > 1) body += ` · 第 ${times} 次提醒`;
 
     try {
-      const r = await sendPush(row, { title: "⏰ 轻提醒", body, id: row.id }, env);
+      const r = await sendPush(row, {
+        title: "⏰ 轻提醒", body, id: row.id, subId: row.sub_id
+      }, env);
       if (r.ok) sent++;
       if (r.gone) {
         await env.DB.prepare("DELETE FROM subs WHERE id = ?").bind(row.sub_id).run();
@@ -149,6 +169,9 @@ export default {
 
       if (url.pathname === "/api/test" && req.method === "POST")
         return await handleTest(req, env);
+
+      if (url.pathname === "/api/ack" && req.method === "POST")
+        return await handleAck(req, env);
 
       if (url.pathname === "/api/health")
         return json({ ok: true, time: Date.now() }, 200, env);
